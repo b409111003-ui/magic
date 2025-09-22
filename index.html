@@ -5,104 +5,97 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>社區散步友善地圖</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <style>
     #map { height: 100vh; width: 100%; }
-    .custom-icon {
-      font-size: 28px;
-      text-align: center;
-      line-height: 28px;
-    }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
-
   <script>
     // 初始化地圖
-    const map = L.map('map').setView([25.033964, 121.564468], 15);
+    const map = L.map('map').setView([25.01976, 121.55599], 16);
 
-    // OSM 圖磚
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap 貢獻者'
+      maxZoom: 19,
+      attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // 定位使用者位置
+    // 自訂 icon
+    const parkIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/427/427735.png", // 樹
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+      popupAnchor: [0, -36]
+    });
+
+    const waterIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/2910/2910768.png", // 水滴
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+      popupAnchor: [0, -32]
+    });
+
+    const storeIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/2331/2331716.png", // 便利商店
+      iconSize: [34, 34],
+      iconAnchor: [17, 34],
+      popupAnchor: [0, -34]
+    });
+
+    const marketIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/3075/3075977.png", // 市場
+      iconSize: [34, 34],
+      iconAnchor: [17, 34],
+      popupAnchor: [0, -34]
+    });
+
+    // 標示地點
+    const spots = [
+      { name: "黎孝公園 - 有椅子可休息", coords: [25.01976, 121.55599], icon: parkIcon },
+      { name: "飲水機 - 可補充水分", coords: [25.0205, 121.5568], icon: waterIcon },
+      { name: "7-Eleven - 便利商店", coords: [25.0211, 121.5553], icon: storeIcon },
+      { name: "黎孝市場 - 傳統市場", coords: [25.0222, 121.5547], icon: marketIcon }
+    ];
+
+    spots.forEach(spot => {
+      L.marker(spot.coords, { icon: spot.icon }).addTo(map)
+        .bindPopup(spot.name);
+    });
+
+    // 使用者位置
     let userMarker;
     map.locate({ setView: true, maxZoom: 17 });
 
     map.on('locationfound', function(e) {
       if (userMarker) map.removeLayer(userMarker);
-      userMarker = L.marker(e.latlng, {
-        icon: L.divIcon({ className: 'custom-icon', html: '🧍' })
-      }).addTo(map).bindPopup("你在這裡").openPopup();
+      userMarker = L.marker(e.latlng).addTo(map)
+        .bindPopup("您的位置").openPopup();
+
+      // 預設規劃到黎孝公園的路線
+      const destination = spots[0].coords; 
+
+      const url = `https://router.project-osrm.org/route/v1/foot/${e.latlng.lng},${e.latlng.lat};${destination[1]},${destination[0]}?overview=full&geometries=geojson`;
+
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          if (data.routes && data.routes.length > 0) {
+            const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+            L.polyline(coords, { color: 'blue', weight: 5 }).addTo(map)
+              .bindPopup("步行路線");
+          } else {
+            alert("無法規劃路線");
+          }
+        })
+        .catch(err => console.error(err));
     });
 
     map.on('locationerror', function() {
-      alert("無法取得定位");
-    });
-
-    // 自訂 Icon
-    function createIcon(emoji) {
-      return L.divIcon({
-        className: 'custom-icon',
-        html: emoji,
-        iconSize: [28, 28],
-        iconAnchor: [14, 28]
-      });
-    }
-
-    const icons = {
-      park: createIcon("🌳"),
-      water: createIcon("💧"),
-      store: createIcon("🏪"),
-      market: createIcon("🛒")
-    };
-
-    // 測試點資料
-    const places = [
-      { name: "崇德綠地", type: "park", coords: [25.0333, 121.5652] },
-      { name: "社區飲水機", type: "water", coords: [25.0328, 121.5639] },
-      { name: "7-Eleven 崇德門市", type: "store", coords: [25.0341, 121.5665] },
-      { name: "信義傳統市場", type: "market", coords: [25.0319, 121.5649] }
-    ];
-
-    places.forEach(place => {
-      L.marker(place.coords, { icon: icons[place.type] })
-        .addTo(map)
-        .bindPopup(`${place.name}`);
-    });
-
-    // OSRM 路線規劃 (走路)
-    function routeTo(dest) {
-      if (!userMarker) {
-        alert("尚未取得使用者位置");
-        return;
-      }
-
-      L.Routing.control({
-        waypoints: [
-          userMarker.getLatLng(),
-          L.latLng(dest[0], dest[1])
-        ],
-        router: L.Routing.osrmv1({
-          serviceUrl: "https://router.project-osrm.org/route/v1"
-        }),
-        lineOptions: {
-          styles: [{ color: 'blue', weight: 5 }]
-        },
-        createMarker: () => null
-      }).addTo(map);
-    }
-
-    // 點擊地圖標記時規劃路線
-    places.forEach(place => {
-      L.marker(place.coords, { icon: icons[place.type] })
-        .addTo(map)
-        .bindPopup(`${place.name} <br><button onclick="routeTo([${place.coords}])">導航</button>`);
+      alert("無法取得您的位置");
     });
   </script>
 </body>
 </html>
+
 
