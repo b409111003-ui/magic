@@ -51,17 +51,14 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
-    // 初始化地圖
     const map = L.map("map", { zoomControl: false }).setView([25.033964, 121.564468], 15);
     L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    // OSM 圖資
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // 使用者位置 icon
     const userIcon = L.icon({
       iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
       iconSize: [40, 40],
@@ -69,30 +66,25 @@
       popupAnchor: [0, -40]
     });
 
-    // 其他 icon
     const icons = {
       water: L.icon({ iconUrl:"https://cdn-icons-png.flaticon.com/512/728/728093.png", iconSize:[40,40] }),
-      convenience: L.icon({ iconUrl:"https://cdn-icons-png.flaticon.com/512/3448/3448445.png", iconSize:[40,40] }),
+      convenience: L.icon({ iconUrl:"https://cdn-icons-png.flaticon.com/512/1046/1046784.png", iconSize:[40,40] }),
       market: L.icon({ iconUrl:"https://cdn-icons-png.flaticon.com/512/3081/3081559.png", iconSize:[40,40] }),
       park: L.icon({ iconUrl:"https://cdn-icons-png.flaticon.com/512/427/427735.png", iconSize:[40,40] })
     };
 
-    // 使用者位置
     let userMarker, userLat, userLon;
     navigator.geolocation.watchPosition(pos => {
       userLat = pos.coords.latitude;
       userLon = pos.coords.longitude;
       if (!userMarker) {
-        userMarker = L.marker([userLat, userLon], { icon: userIcon })
-          .addTo(map)
-          .bindPopup("你在這裡 📍");
+        userMarker = L.marker([userLat, userLon], { icon: userIcon }).addTo(map).bindPopup("你在這裡 📍");
         map.setView([userLat, userLon], 16);
       } else {
         userMarker.setLatLng([userLat, userLon]);
       }
     }, err => { console.error("定位失敗：", err); });
 
-    // OSM 類別
     const categories = {
       water: 'node["amenity"="drinking_water"](around:RADIUS,LAT,LON);',
       convenience: 'node["shop"="convenience"](around:RADIUS,LAT,LON);',
@@ -100,7 +92,6 @@
       park: 'way["leisure"="park"](around:RADIUS,LAT,LON);'
     };
 
-    // 組合 Overpass Query
     function buildOverpassQuery(lat, lon, radius, selections) {
       if (!selections || selections.length === 0) return null;
       let body = '[out:json][timeout:25];(';
@@ -113,7 +104,6 @@
       return body;
     }
 
-    // 搜尋結果
     let searchMarkers = [];
     let routeLine;
 
@@ -122,9 +112,9 @@
       const checked = Array.from(document.querySelectorAll("input[type=checkbox]:checked")).map(c => c.value);
       const radius = parseInt(document.getElementById("radiusInput").value) || 500;
       const query = buildOverpassQuery(userLat, userLon, radius, checked);
+
       if (!query) { alert("請先選擇要搜尋的類別"); return; }
 
-      // 清除舊標記與路線
       searchMarkers.forEach(m => map.removeLayer(m));
       searchMarkers = [];
       if (routeLine) map.removeLayer(routeLine);
@@ -153,6 +143,10 @@
           if(matchedType==="market" && el.tags.name) placeName = el.tags.name + "市場";
 
           const marker = L.marker([lat, lon], { icon: matchedType ? icons[matchedType] : undefined }).addTo(map);
+          
+          // 永久顯示名稱
+          marker.bindTooltip(placeName, { permanent: true, direction: "top", offset: [0, -10], className: "place-label" });
+
           marker.bindPopup(`
             <b>${placeName}</b><br>
             類型: ${matchedType || "未知"}<br>
@@ -164,8 +158,23 @@
       .catch(err => { console.error(err); alert("查詢失敗，請稍後再試"); });
     });
 
-    // OSRM 步行路線（自動加 waypoint 避免繞遠路）
+    // OSRM 步行路線
     window.routeTo = function(destLat, destLon) {
       if (!userLat || !userLon) { alert("尚未取得使用者位置"); return; }
       if (routeLine) map.removeLayer(routeLine);
 
+      const url = `https://router.project-osrm.org/route/v1/foot/${userLon},${userLat};${destLon},${destLat}?overview=full&geometries=geojson`;
+
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          if (!data.routes || data.routes.length === 0) { alert("無法規劃路線"); return; }
+          const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+          routeLine = L.polyline(coords, { color: "blue", weight: 5 }).addTo(map);
+          map.fitBounds(routeLine.getBounds());
+        })
+        .catch(err => { console.error(err); alert("路線規劃失敗"); });
+    };
+  </script>
+</body>
+</html>
