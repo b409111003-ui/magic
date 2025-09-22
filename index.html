@@ -2,70 +2,225 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>社區散步友善地圖</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <style>
-    #map { height: 100vh; width: 100%; }
+    body, html { margin: 0; padding: 0; height: 100%; }
+    #map { width: 100%; height: 100%; }
+    .controls {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      z-index: 1000;
+      font-size: 14px;
+    }
+    .controls label { display: block; margin: 4px 0; }
+    .controls select, .controls input, .controls button { margin-top: 6px; }
+    .controls button {
+      padding: 4px 8px;
+      border-radius: 6px;
+      border: none;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
+  <!-- 控制選單 -->
+  <div class="controls">
+    <label><input type="checkbox" value="water"> 飲水機</label>
+    <label><input type="checkbox" value="convenience"> 便利商店</label>
+    <label><input type="checkbox" value="market"> 市場</label>
+    <label><input type="checkbox" value="park"> 公園</label>
+    <label>搜尋半徑 (公尺)：
+      <input type="number" id="radiusInput" value="500" min="100" step="100">
+    </label>
+    <button id="searchBtn">搜尋附近</button>
+  </div>
+
   <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
   <script>
     // 初始化地圖
-    const map = L.map('map').setView([25.01976, 121.55599], 16);
+    const map = L.map("map", { zoomControl: false }).setView([25.033964, 121.564468], 15);
+    L.control.zoom({ position: "bottomright" }).addTo(map);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    // OSM 圖資
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '© OpenStreetMap'
     }).addTo(map);
 
-    // 自訂 icon
-    const parkIcon = L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/427/427735.png", // 樹
-      iconSize: [36, 36],
-      iconAnchor: [18, 36],
-      popupAnchor: [0, -36]
+    // 使用者位置 icon
+    const userIcon = L.icon({
+      iconUrl: "https://cdn-icons-png.flaticon.com/512/149/149071.png",
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
+      popupAnchor: [0, -40]
     });
 
-    const waterIcon = L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/2910/2910768.png", // 水滴
-      iconSize: [32, 32],
-      iconAnchor: [16, 32],
-      popupAnchor: [0, -32]
+    // 其他 icon
+    const icons = {
+      water: L.icon({
+        iconUrl:"https://cdn-icons-png.flaticon.com/512/728/728093.png", // 水滴
+        iconSize:[40,40]
+      }),
+      convenience: L.icon({
+        iconUrl:"https://cdn-icons-png.flaticon.com/512/2933/2933245.png", // 便利商店
+        iconSize:[40,40]
+      }),
+      market: L.icon({
+        iconUrl:"https://cdn-icons-png.flaticon.com/512/3081/3081559.png", // 市場
+        iconSize:[40,40]
+      }),
+      park: L.icon({
+        iconUrl:"https://cdn-icons-png.flaticon.com/512/427/427735.png", // 樹
+        iconSize:[40,40]
+      })
+    };
+
+    // 使用者位置
+    let userMarker, userLat, userLon;
+    navigator.geolocation.watchPosition(pos => {
+      userLat = pos.coords.latitude;
+      userLon = pos.coords.longitude;
+      if (!userMarker) {
+        userMarker = L.marker([userLat, userLon], { icon: userIcon })
+          .addTo(map)
+          .bindPopup("你在這裡 📍");
+        map.setView([userLat, userLon], 16);
+      } else {
+        userMarker.setLatLng([userLat, userLon]);
+      }
+    }, err => {
+      console.error("定位失敗：", err);
     });
 
-    const storeIcon = L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/2331/2331716.png", // 便利商店
-      iconSize: [34, 34],
-      iconAnchor: [17, 34],
-      popupAnchor: [0, -34]
+    // OSM 類別
+    const categories = {
+      water: 'node["amenity"="drinking_water"](around:RADIUS,LAT,LON);',
+      convenience: 'node["shop"="convenience"](around:RADIUS,LAT,LON);',
+      market: 'node["amenity"="marketplace"](around:RADIUS,LAT,LON);',
+      park: 'way["leisure"="park"](around:RADIUS,LAT,LON);'
+    };
+
+    // 組合 Overpass Query
+    function buildOverpassQuery(lat, lon, radius, selections) {
+      if (!selections || selections.length === 0) return null;
+      let body = '[out:json][timeout:25];(';
+      for (const sel of selections) {
+        let fragment = categories[sel];
+        fragment = fragment.replace(/RADIUS/g, radius).replace(/LAT/g, lat).replace(/LON/g, lon);
+        body += "\n" + fragment;
+      }
+      body += '\n);out center;';
+      return body;
+    }
+
+    // 搜尋結果
+    let searchMarkers = [];
+    let routeLine;
+
+    document.getElementById("searchBtn").addEventListener("click", () => {
+      if (!userMarker) {
+        alert("尚未取得定位");
+        return;
+      }
+      const checked = Array.from(document.querySelectorAll("input[type=checkbox]:checked")).map(c => c.value);
+      const radius = parseInt(document.getElementById("radiusInput").value) || 500;
+      const query = buildOverpassQuery(userLat, userLon, radius, checked);
+
+      if (!query) {
+        alert("請先選擇要搜尋的類別");
+        return;
+      }
+
+      // 清除舊標記與路線
+      searchMarkers.forEach(m => map.removeLayer(m));
+      searchMarkers = [];
+      if (routeLine) {
+        map.removeLayer(routeLine);
+      }
+
+      fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "data=" + encodeURIComponent(query)
+      })
+      .then(r => r.json())
+      .then(data => {
+        data.elements.forEach(el => {
+          const lat = el.lat || el.center?.lat;
+          const lon = el.lon || el.center?.lon;
+          if (!lat || !lon) return;
+
+          let matchedType = null;
+          if (el.tags) {
+            if (el.tags.amenity === "drinking_water") matchedType = "water";
+            else if (el.tags.shop === "convenience") matchedType = "convenience";
+            else if (el.tags.amenity === "marketplace") matchedType = "market";
+            else if (el.tags.leisure === "park") matchedType = "park";
+          }
+
+          // 名稱處理（市場特別顯示）
+          let placeName = el.tags.name || (matchedType==="market" ? "市場 (未命名)" : matchedType || "地點");
+          if(matchedType==="market" && el.tags.name){
+            placeName = el.tags.name + "市場";
+          }
+
+          const marker = L.marker([lat, lon], { icon: matchedType ? icons[matchedType] : undefined }).addTo(map);
+          marker.bindPopup(`
+            <b>${placeName}</b><br>
+            類型: ${matchedType || "未知"}<br>
+            <button onclick="routeTo(${lat},${lon})">導航</button>
+          `);
+          searchMarkers.push(marker);
+        });
+      })
+      .catch(err => {
+        console.error(err);
+        alert("查詢失敗，請稍後再試");
+      });
     });
 
-    const marketIcon = L.icon({
-      iconUrl: "https://cdn-icons-png.flaticon.com/512/3075/3075977.png", // 市場
-      iconSize: [34, 34],
-      iconAnchor: [17, 34],
-      popupAnchor: [0, -34]
-    });
+    // OSRM 步行路線
+    window.routeTo = function(destLat, destLon) {
+      if (!userLat || !userLon) {
+        alert("尚未取得使用者位置");
+        return;
+      }
+      if (routeLine) {
+        map.removeLayer(routeLine);
+      }
 
-    // 公園
-    L.marker([25.01976, 121.55599], { icon: parkIcon }).addTo(map)
-      .bindPopup("黎孝公園 - 有椅子可休息");
+      const url = `https://router.project-osrm.org/route/v1/foot/${userLon},${userLat};${destLon},${destLat}?overview=full&geometries=geojson`;
 
-    // 飲水機
-    L.marker([25.0205, 121.5568], { icon: waterIcon }).addTo(map)
-      .bindPopup("飲水機 - 可補充水分");
-
-    // 便利商店
-    L.marker([25.0211, 121.5553], { icon: storeIcon }).addTo(map)
-      .bindPopup("7-Eleven - 便利商店");
-
-    // 市場
-    L.marker([25.0222, 121.5547], { icon: marketIcon }).addTo(map)
-      .bindPopup("黎孝市場 - 傳統市場");
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          if (!data.routes || data.routes.length === 0) {
+            alert("無法規劃路線");
+            return;
+          }
+          const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+          routeLine = L.polyline(coords, { color: "blue", weight: 5 }).addTo(map);
+          map.fitBounds(routeLine.getBounds());
+        })
+        .catch(err => {
+          console.error(err);
+          alert("路線規劃失敗");
+        });
+    };
   </script>
 </body>
 </html>
-
