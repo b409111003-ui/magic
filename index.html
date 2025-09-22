@@ -50,52 +50,22 @@
       popupAnchor: [0, -34]
     });
 
-    // 標示地點
-    const spots = [
-      { name: "黎孝公園 - 有椅子可休息", coords: [25.01976, 121.55599], icon: parkIcon },
-      { name: "飲水機 - 可補充水分", coords: [25.0205, 121.5568], icon: waterIcon },
-      { name: "7-Eleven - 便利商店", coords: [25.0211, 121.5553], icon: storeIcon },
-      { name: "黎孝市場 - 傳統市場", coords: [25.0222, 121.5547], icon: marketIcon }
-    ];
+    // 公園
+    L.marker([25.01976, 121.55599], { icon: parkIcon }).addTo(map)
+      .bindPopup("黎孝公園 - 有椅子可休息");
 
-    spots.forEach(spot => {
-      L.marker(spot.coords, { icon: spot.icon }).addTo(map)
-        .bindPopup(spot.name);
-    });
+    // 飲水機
+    L.marker([25.0205, 121.5568], { icon: waterIcon }).addTo(map)
+      .bindPopup("飲水機 - 可補充水分");
 
-    // 使用者位置
-    let userMarker;
-    map.locate({ setView: true, maxZoom: 17 });
+    // 便利商店
+    L.marker([25.0211, 121.5553], { icon: storeIcon }).addTo(map)
+      .bindPopup("7-Eleven - 便利商店");
 
-    map.on('locationfound', function(e) {
-      if (userMarker) map.removeLayer(userMarker);
-      userMarker = L.marker(e.latlng).addTo(map)
-        .bindPopup("您的位置").openPopup();
-
-      // 預設規劃到黎孝公園的路線
-      const destination = spots[0].coords; 
-
-      const url = `https://router.project-osrm.org/route/v1/foot/${e.latlng.lng},${e.latlng.lat};${destination[1]},${destination[0]}?overview=full&geometries=geojson`;
-
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          if (data.routes && data.routes.length > 0) {
-            const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-            L.polyline(coords, { color: 'blue', weight: 5 }).addTo(map)
-              .bindPopup("步行路線");
-          } else {
-            alert("無法規劃路線");
-          }
-        })
-        .catch(err => console.error(err));
-    });
-
-    map.on('locationerror', function() {
-      alert("無法取得您的位置");
-    });
+    // 市場
+    L.marker([25.0222, 121.5547], { icon: marketIcon }).addTo(map)
+      .bindPopup("黎孝市場 - 傳統市場");
   </script>
 </body>
 </html>
-
 
