@@ -76,7 +76,7 @@
         iconSize:[40,40]
       }),
       convenience: L.icon({
-        iconUrl:"https://cdn-icons-png.flaticon.com/512/2933/2933245.png", // 便利商店
+        iconUrl:"https://cdn-icons-png.flaticon.com/512/2331/2331970.png", // 換新的便利商店圖示 (購物袋)
         iconSize:[40,40]
       }),
       market: L.icon({
@@ -193,7 +193,7 @@
       });
     });
 
-    // OSRM 步行路線
+    // OSRM 步行路線（完全走 foot profile）
     window.routeTo = function(destLat, destLon) {
       if (!userLat || !userLon) {
         alert("尚未取得使用者位置");
@@ -203,6 +203,7 @@
         map.removeLayer(routeLine);
       }
 
+      // 如果自己架設 OSRM，可以把網址換掉，例如 http://localhost:5000/route/v1/foot/...
       const url = `https://router.project-osrm.org/route/v1/foot/${userLon},${userLat};${destLon},${destLat}?overview=full&geometries=geojson`;
 
       fetch(url)
@@ -224,3 +225,4 @@
   </script>
 </body>
 </html>
+
